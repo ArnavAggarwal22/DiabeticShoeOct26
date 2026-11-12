@@ -22,5 +22,6 @@ if (task === "setup") {
     process.exit(1);
   }
   if (task === "test") run(venvPy, ["-m", "pytest", "-q"]);
+  else if (task === "build-starter") run(venvPy, ["build_starter.py"]);
   else run(venvPy, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", process.env.ML_PORT || "8000", ...(task === "dev" ? ["--reload"] : [])]);
 }

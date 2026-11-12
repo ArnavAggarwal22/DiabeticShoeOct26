@@ -43,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, inference, jobs, storage, training
+from . import config, inference, jobs, starter, storage, training
 from .features import FEATURE_VERSION, feature_names, session_features
 from .parsing import SensorParseError, parse_sensor_csv
 from .schema import (CLINICAL_FIELDS, CLINICAL_KEYS, LABEL_GUIDE, LABELS, REQUIRED_KEYS, SENSOR_HEADER)
@@ -54,15 +54,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 def ensure_model() -> None:
-    """Start training the synthetic starter model in the background on first start (or if the
-    active model is unusable). The server starts accepting requests immediately."""
+    """Make sure a usable model is active on boot.
+
+    1. Keep the current active model if it loads and matches the feature set.
+    2. Otherwise activate the pre-trained starter bundled in the repo (instant).
+    3. Only if that is missing/incompatible, train a starter model in the background; the
+       server keeps accepting requests meanwhile.
+    """
     try:
         art = inference.load_active()
         if art["feature_version"] == FEATURE_VERSION:
             return
-        log.warning("Active model uses an old feature set; training a fresh starter model in the background.")
+        log.warning("Active model uses an old feature set.")
     except inference.NoModelError as e:
-        log.info("%s Training the synthetic starter model in the background (~2 min)...", e)
+        log.info("%s", e)
+    if starter.register_bundled():
+        inference.invalidate_cache()
+        return
+    log.info("Training the synthetic starter model in the background (a few minutes)...")
     jobs.start("bootstrap", source="synthetic", activate=True)
 
 
@@ -239,7 +248,7 @@ def admin_overview():
     if active:
         active = {k: v for k, v in active.items() if k != "path"}
     return {"readiness": training.dataset_readiness(), "active_model": active, "models": storage.list_models(),
-            "training_job": jobs.status()}
+            "training_job": jobs.status(), "storage": {"ephemeral": config.EPHEMERAL_STORAGE}}
 
 
 # --- admin: sessions -----------------------------------------------------------------------

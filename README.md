@@ -29,7 +29,7 @@ cp .env.example .env.local
 Run the two processes in separate terminals:
 
 ```bash
-npm run ml      # ML service on http://127.0.0.1:8000 (first start trains the starter model)
+npm run ml      # ML service on http://127.0.0.1:8000 (loads the bundled starter model instantly)
 npm run dev     # web app on http://localhost:3000
 ```
 
@@ -70,9 +70,14 @@ data-efficient and robust choice for data like this. Deep sequence models (LSTM 
 raw signal) only make sense once there are thousands of labelled recordings.
 
 ### Starter (bootstrap) model
-Before any real data has been uploaded, the service trains a **starter model** on simulated
-recordings. Each simulated foot is labelled by the legacy rules plus IWGDF-style clinical risk
-points. The UI marks this model as *"Starter model · trained on simulated data"*. Replace it by
+A pre-trained starter model ships in the repo at `ml/models/starter.joblib` (~10 KB), so a fresh
+deployment is ready within seconds without training. If you change the feature engineering, the
+synthetic generator or the pinned scikit-learn version, rebuild it with `npm run ml:build-starter`
+and commit the file. If the bundle is missing or incompatible, the service falls back to training a
+starter in the background.
+
+The starter model is trained on simulated recordings, not real patients. Each simulated foot is
+labelled by the legacy rules plus IWGDF-style clinical risk points. The UI marks this model as *"Starter model · trained on simulated data"*. Replace it by
 training on real labelled data in `/admin`.
 
 ### Admin page (`/admin`)
@@ -103,11 +108,35 @@ Labels are per foot:
 The web app needs only `ML_API_URL` (default `http://127.0.0.1:8000`).
 
 ## Deployment
-The ML service needs a host with a **persistent disk** for its SQLite database and model files,
-so it cannot run on Vercel. The recommended setup is **Railway for the ML service** and
-**Vercel for the web app**.
+The web app goes on **Vercel**. The ML service needs its own host:
 
-### ML service on Railway
+| Option | Cost | Data persistence | Notes |
+|---|---|---|---|
+| **Render free** + keep-alive ping | free | **none**: uploaded data and trained models are wiped on every restart/redeploy | Fine for demos and screening with the shipped starter model |
+| **Railway** with a volume | small monthly fee after trial | yes | Recommended once you collect real clinical data |
+
+### Free: ML service on Render (with a 10-minute keep-alive ping)
+`render.yaml` (repo root) is a Render Blueprint that configures everything:
+the free plan, the Singapore region, the ML Dockerfile, the `/health` check, single-thread
+training for the 0.1-CPU instance, and a temporary-storage warning in `/admin`.
+1. Render dashboard → **New → Blueprint** → connect this GitHub repo → **Apply**.
+2. When asked, set `ADMIN_TOKEN` to a long random secret (this is the `/admin` password).
+3. Wait for the deploy to go **Live**, then open `https://<service>.onrender.com/health`.
+   It answers within seconds, because the pre-trained starter model ships in the repo.
+4. **Keep it awake:** free services sleep after 15 minutes without traffic. Create a free
+   monitor at [cron-job.org](https://cron-job.org) or [UptimeRobot](https://uptimerobot.com)
+   that requests `https://<service>.onrender.com/health` **every 10 minutes**. One always-on
+   service uses about 720-744 of Render's 750 free hours per month, so keep only this one service awake.
+5. In Vercel, set `ML_API_URL` to `https://<service>.onrender.com` and redeploy.
+
+Free-tier limits to know:
+- No persistent disk, so every restart or redeploy wipes uploaded sessions, the prediction log
+  and trained models. The bundled starter always comes back. Export your dataset from
+  **Dataset → Export ML dataset (CSV)** regularly. `render.yaml` only redeploys when `ml/` changes.
+- 0.1 CPU and 512 MB RAM: predictions are fine, but training on real data is slow
+  (it runs in the background).
+
+### ML service on Railway (persistent)
 `railway.json` (repo root) tells Railway to build `ml/Dockerfile`, so leave the service's
 Root Directory empty.
 1. New Project → Deploy from GitHub repo → this repository.

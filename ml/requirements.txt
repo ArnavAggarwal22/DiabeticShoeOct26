@@ -1,6 +1,9 @@
-fastapi>=0.115
-uvicorn[standard]>=0.30
-scikit-learn>=1.6
-pandas>=2.2
-numpy>=2.1
-joblib>=1.4
+# Pinned: the bundled starter model (models/starter.joblib) must be loaded with the same
+# scikit-learn / numpy versions it was built with. Rebuild the starter if you bump these.
+fastapi==0.162.5
+uvicorn[standard]==0.54.0
+scikit-learn==1.9.1
+scipy==1.18.1
+pandas==3.1.1
+numpy==2.5.4
+joblib==1.6.0

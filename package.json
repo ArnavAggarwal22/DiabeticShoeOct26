@@ -10,7 +10,8 @@
     "ml": "node scripts/ml.mjs dev",
     "ml:setup": "node scripts/ml.mjs setup",
     "ml:test": "node scripts/ml.mjs test",
-    "ml:start": "node scripts/ml.mjs start"
+    "ml:start": "node scripts/ml.mjs start",
+    "ml:build-starter": "node scripts/ml.mjs build-starter"
   },
   "dependencies": {
     "next": "^16.4.6",

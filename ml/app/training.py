@@ -64,7 +64,7 @@ def _make(algo: str, n: int):
     if algo == "random_forest":
         return Pipeline([("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
                          ("clf", RandomForestClassifier(n_estimators=300, min_samples_leaf=max(1, leaf // 3),
-                                                        class_weight="balanced_subsample", n_jobs=-1,
+                                                        class_weight="balanced_subsample", n_jobs=config.N_JOBS,
                                                         random_state=0))])
     if algo == "logistic_regression":
         return Pipeline([("impute", SimpleImputer(strategy="median", keep_empty_features=True)),

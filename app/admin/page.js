@@ -119,6 +119,13 @@ export default function AdminPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 space-y-6">
+        {overview?.storage?.ephemeral && (
+          <Notice kind="warn">
+            <b>Temporary storage:</b> this ML service runs without a persistent disk (e.g. Render free plan).
+            Uploaded sessions, the prediction log and models you train are <b>lost whenever the service restarts or redeploys</b>.
+            Use <b>Dataset → Export ML dataset (CSV)</b> to keep a copy of your data. The bundled starter model always comes back automatically.
+          </Notice>
+        )}
         {tab === "overview" && <Overview overview={overview} goTo={setTab} />}
         {tab === "add" && <AddData api={api} schema={schema} onSaved={refresh} />}
         {tab === "dataset" && <Dataset api={api} schema={schema} onChange={refresh} />}

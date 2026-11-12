@@ -1,0 +1,31 @@
+# Render Blueprint for the SmartSole ML service (free plan).
+# Render dashboard -> New -> Blueprint -> pick this repo. The web app stays on Vercel.
+services:
+  - type: web
+    name: smartsole-ml
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./ml/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    # Free instances have no persistent disk, so every redeploy wipes uploaded data and
+    # trained models. Only redeploy when the ML service itself changes.
+    buildFilter:
+      paths:
+        - ml/**
+        - render.yaml
+      ignoredPaths:
+        - ml/tests/**
+    envVars:
+      - key: ADMIN_TOKEN
+        sync: false # Render asks for it when you create the Blueprint; use a long random value
+      - key: EPHEMERAL_STORAGE
+        value: "true" # admin page warns that data is lost on restart (no disk on free plan)
+      - key: ML_N_JOBS
+        value: "1" # free plan has 0.1 CPU; extra worker threads only add memory and contention
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: LOG_PREDICTIONS
+        value: "true"

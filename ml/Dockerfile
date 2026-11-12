@@ -12,6 +12,8 @@ COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ml/app ./app
+# Pre-trained starter model: activated on first boot, so no training is needed at start-up.
+COPY ml/models ./models
 
 # Mount persistent storage at /data (Railway volume / docker volume) so the database and
 # trained models survive restarts and redeploys.

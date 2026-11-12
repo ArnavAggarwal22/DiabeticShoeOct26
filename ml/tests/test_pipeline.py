@@ -21,7 +21,7 @@ os.environ["MIN_SAMPLES_PER_CLASS"] = "3"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import jobs, main  # noqa: E402
+from app import config, jobs, main, starter  # noqa: E402
 from app.features import feature_names, session_features  # noqa: E402
 from app.parsing import SensorParseError, parse_sensor_csv  # noqa: E402
 from app.synthetic import demo_session, generate_sessions, to_sensor_csv  # noqa: E402
@@ -37,9 +37,9 @@ LEGACY_LOG = "\n".join(
 @pytest.fixture(scope="module")
 def client():
     with TestClient(main.app) as c:
-        # The starter model trains in a background job; the server answers immediately.
+        # The bundled pre-trained starter is activated on boot: no training job runs.
         assert c.get("/health").status_code == 200
-        assert jobs.wait()["status"] == "succeeded"
+        assert jobs.status()["status"] == "idle"
         yield c
 
 
@@ -89,6 +89,19 @@ def test_feature_vector_is_stable_and_finite():
 def test_health_has_bootstrap_model(client):
     r = client.get("/health").json()
     assert r["model"]["data_source"] == "synthetic-bootstrap" and r["training"] is None
+    assert r["model"]["version"] == starter.load_bundle()["version"]  # the shipped starter, not retrained
+
+
+def test_starter_bundle_fallbacks(tmp_path, monkeypatch):
+    import joblib
+
+    monkeypatch.setattr(config, "STARTER_MODEL_PATH", tmp_path / "missing.joblib")
+    assert starter.load_bundle() is None and starter.register_bundled() is None  # -> background training
+
+    stale = tmp_path / "stale.joblib"
+    joblib.dump({"feature_version": -1}, stale)
+    monkeypatch.setattr(config, "STARTER_MODEL_PATH", stale)
+    assert starter.load_bundle() is None  # incompatible feature set -> train instead
 
 
 def test_predict_demo_scenarios_are_ordered(client):

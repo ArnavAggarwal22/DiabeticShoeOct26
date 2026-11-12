@@ -41,6 +41,17 @@ MIN_SAMPLES_PER_CLASS = int(os.getenv("MIN_SAMPLES_PER_CLASS", "10"))
 MIN_PATIENTS = int(os.getenv("MIN_PATIENTS", "8"))
 RECOMMENDED_SAMPLES = int(os.getenv("RECOMMENDED_SAMPLES", "150"))
 
+# Parallel workers for model training (-1 = all cores). Set to 1 on tiny hosts such as
+# Render's free tier (0.1 CPU), where extra threads only add memory and contention.
+N_JOBS = int(os.getenv("ML_N_JOBS", "-1"))
+
+# Set on hosts without a persistent disk (e.g. Render free): the admin page then warns that
+# uploaded data and trained models are lost whenever the service restarts.
+EPHEMERAL_STORAGE = os.getenv("EPHEMERAL_STORAGE", "false").lower() in {"1", "true", "yes"}
+
+# Pre-trained starter model shipped in the repo; registered on boot instead of training.
+STARTER_MODEL_PATH = Path(os.getenv("STARTER_MODEL_PATH", BASE_DIR / "models" / "starter.joblib"))
+
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
 for _d in (DATA_DIR, MODELS_DIR):

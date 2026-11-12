@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.signal import lfilter
 
 LAMBDA = 0.2
 MU_T, SIGMA_T = 31.0, 1.5
@@ -19,11 +20,10 @@ MU_RH, SIGMA_RH = 60.0, 15.0
 
 
 def _ewma_mean(z: np.ndarray) -> float:
-    s, acc = 0.0, 0.0
-    for v in z:
-        s = LAMBDA * v + (1 - LAMBDA) * s
-        acc += s
-    return acc / max(len(z), 1)
+    """Mean of the EWMA trajectory s_i = λ·z_i + (1-λ)·s_{i-1}, s_{-1} = 0 (vectorised IIR filter)."""
+    if len(z) == 0:
+        return 0.0
+    return float(lfilter([LAMBDA], [1.0, -(1.0 - LAMBDA)], np.asarray(z, dtype=float)).mean())
 
 
 def rule_scores(df: pd.DataFrame, weight: float, abs_delta_t: float) -> dict[str, float]:

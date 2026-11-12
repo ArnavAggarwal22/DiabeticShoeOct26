@@ -3,4 +3,5 @@
 *
 !ml/requirements.txt
 !ml/app
+!ml/models
 ml/app/**/__pycache__
