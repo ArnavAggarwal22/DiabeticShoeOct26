@@ -1,6 +1,8 @@
 services:
   ml:
-    build: ./ml
+    build:
+      context: .
+      dockerfile: ml/Dockerfile
     env_file: ./ml/.env
     volumes:
       - ml-data:/data

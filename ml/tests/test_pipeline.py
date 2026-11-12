@@ -21,7 +21,7 @@ os.environ["MIN_SAMPLES_PER_CLASS"] = "3"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import main  # noqa: E402
+from app import jobs, main  # noqa: E402
 from app.features import feature_names, session_features  # noqa: E402
 from app.parsing import SensorParseError, parse_sensor_csv  # noqa: E402
 from app.synthetic import demo_session, generate_sessions, to_sensor_csv  # noqa: E402
@@ -37,6 +37,9 @@ LEGACY_LOG = "\n".join(
 @pytest.fixture(scope="module")
 def client():
     with TestClient(main.app) as c:
+        # The starter model trains in a background job; the server answers immediately.
+        assert c.get("/health").status_code == 200
+        assert jobs.wait()["status"] == "succeeded"
         yield c
 
 
@@ -85,7 +88,7 @@ def test_feature_vector_is_stable_and_finite():
 
 def test_health_has_bootstrap_model(client):
     r = client.get("/health").json()
-    assert r["model"]["data_source"] == "synthetic-bootstrap"
+    assert r["model"]["data_source"] == "synthetic-bootstrap" and r["training"] is None
 
 
 def test_predict_demo_scenarios_are_ordered(client):
@@ -154,9 +157,14 @@ def test_admin_full_workflow(client):
     assert r["imported"] == 1 and r["failed"] == 1
 
     # 5. train on real data
-    rep = client.post("/admin/train", headers=H, json={"source": "real"})
-    assert rep.status_code == 200, rep.text
-    rep = rep.json()
+    job = client.post("/admin/train", headers=H, json={"source": "real"})
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "running"
+    assert client.post("/admin/train", headers=H, json={"source": "real"}).status_code == 409  # one at a time
+    jobs.wait()
+    status = client.get("/admin/train/status", headers=H).json()
+    assert status["status"] == "succeeded", status
+    rep = status["report"]
     assert rep["data_source"] == "real" and rep["activated"]
     assert len(rep["candidates"]) == 3
     assert all(c["cv_metrics"]["roc_auc"] is not None for c in rep["candidates"])

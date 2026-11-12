@@ -18,7 +18,8 @@ Admin (header X-Admin-Token: $ADMIN_TOKEN):
   POST   /admin/features/recompute  re-run feature extraction on all stored raw logs
   GET    /admin/dataset/export      ML-ready feature matrix as CSV
   GET    /admin/templates/{name}    manifest.csv | sensor_log.csv
-  POST   /admin/train               train + cross-validate candidates, register best model
+  POST   /admin/train               start a background job: cross-validate candidates, register best
+  GET    /admin/train/status        poll the training job (running | succeeded | failed | idle)
   GET    /admin/models              model registry
   GET    /admin/models/{version}    full training report
   POST   /admin/models/{version}/activate
@@ -42,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, inference, storage, training
+from . import config, inference, jobs, storage, training
 from .features import FEATURE_VERSION, feature_names, session_features
 from .parsing import SensorParseError, parse_sensor_csv
 from .schema import (CLINICAL_FIELDS, CLINICAL_KEYS, LABEL_GUIDE, LABELS, REQUIRED_KEYS, SENSOR_HEADER)
@@ -53,18 +54,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 def ensure_model() -> None:
-    """Train the synthetic bootstrap model on first start (or if the active model is unusable)."""
+    """Start training the synthetic starter model in the background on first start (or if the
+    active model is unusable). The server starts accepting requests immediately."""
     try:
         art = inference.load_active()
         if art["feature_version"] == FEATURE_VERSION:
             return
-        log.warning("Active model uses an old feature set; training a fresh bootstrap model.")
+        log.warning("Active model uses an old feature set; training a fresh starter model in the background.")
     except inference.NoModelError as e:
-        log.info("%s Training synthetic bootstrap model...", e)
-    report = training.train(source="synthetic", activate=True)
-    inference.invalidate_cache()
-    log.info("Bootstrap model %s ready (CV macro-F1 %.3f).", report["version"],
-             report["candidates"][0]["cv_metrics"]["macro_f1"])
+        log.info("%s Training the synthetic starter model in the background (~2 min)...", e)
+    jobs.start("bootstrap", source="synthetic", activate=True)
 
 
 @asynccontextmanager
@@ -177,7 +176,10 @@ def root():
 @app.get("/health")
 def health():
     m = storage.active_model()
-    return {"status": "ok", "model": None if m is None else
+    job = jobs.status()
+    return {"status": "ok",
+            "training": job.get("status") == "running" and job.get("kind") or None,
+            "model": None if m is None else
             {"version": m["version"], "algorithm": m["algorithm"], "data_source": m["data_source"],
              "metrics": m["metrics"], "n_samples": m["n_samples"]}}
 
@@ -190,6 +192,9 @@ def predict(req: PredictRequest):
     except SensorParseError as e:
         raise HTTPException(422, detail=str(e)) from e
     except inference.NoModelError as e:
+        if jobs.is_running() and jobs.status().get("kind") == "bootstrap":
+            raise HTTPException(503, detail="The ML service has just started and is still training its starter "
+                                            "model (about 2 minutes). Please try again shortly.") from e
         raise HTTPException(503, detail=str(e)) from e
     if config.LOG_PREDICTIONS:
         log_result = {k: result[k] for k in ("overallRisk", "overallStatus", "abs_deltaT")}
@@ -233,7 +238,8 @@ def admin_overview():
     active = storage.active_model()
     if active:
         active = {k: v for k, v in active.items() if k != "path"}
-    return {"readiness": training.dataset_readiness(), "active_model": active, "models": storage.list_models()}
+    return {"readiness": training.dataset_readiness(), "active_model": active, "models": storage.list_models(),
+            "training_job": jobs.status()}
 
 
 # --- admin: sessions -----------------------------------------------------------------------
@@ -435,12 +441,24 @@ def train(body: TrainIn):
         bad = [a for a in body.algorithms if a not in training.ALGORITHMS]
         if bad:
             raise HTTPException(422, detail=f"Unknown algorithm(s): {', '.join(bad)}.")
+    if body.source not in {"real", "synthetic", "real+synthetic"}:
+        raise HTTPException(422, detail="source must be 'real', 'synthetic' or 'real+synthetic'.")
+    if body.source == "real":  # fail fast instead of inside the background job
+        ready = training.dataset_readiness()
+        if not ready["trainable"]:
+            failed = [c["text"] for c in ready["checks"] if not c["ok"] and not c.get("optional")]
+            raise HTTPException(422, detail="Dataset not ready: " + " ".join(failed))
     try:
-        report = training.train(source=body.source, algorithms=body.algorithms, activate=body.activate)
+        job = jobs.start("admin", source=body.source, algorithms=body.algorithms, activate=body.activate)
     except training.TrainingError as e:
-        raise HTTPException(422, detail=str(e)) from e
-    inference.invalidate_cache()
-    return report
+        raise HTTPException(409, detail=str(e)) from e
+    return job
+
+
+@app.get("/admin/train/status", dependencies=[Depends(require_admin)])
+def train_status():
+    """Poll this after POST /admin/train: status is running | succeeded | failed | idle."""
+    return jobs.status()
 
 
 @app.get("/admin/models", dependencies=[Depends(require_admin)])

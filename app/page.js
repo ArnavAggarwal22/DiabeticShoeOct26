@@ -321,7 +321,7 @@ export default function Home() {
   const requestRef = useRef(null);
 
   useEffect(() => {
-     
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- random ID / locale date must be generated client-side to avoid a hydration mismatch
     setSessionID(`PT-${Math.floor(1000 + Math.random() * 9000)}`);
     setCurrentDate(new Date().toLocaleDateString());
   }, []);

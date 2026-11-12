@@ -103,13 +103,35 @@ Labels are per foot:
 The web app needs only `ML_API_URL` (default `http://127.0.0.1:8000`).
 
 ## Deployment
-The ML service needs a host with a persistent disk for its SQLite database and model files.
-Use Docker on a VM, Render, Railway or Fly.io. Serverless functions will not work.
+The ML service needs a host with a **persistent disk** for its SQLite database and model files,
+so it cannot run on Vercel. The recommended setup is **Railway for the ML service** and
+**Vercel for the web app**.
 
+### ML service on Railway
+`railway.json` (repo root) tells Railway to build `ml/Dockerfile`, so leave the service's
+Root Directory empty.
+1. New Project → Deploy from GitHub repo → this repository.
+2. Add a **Volume** to the service mounted at `/data` (database + trained models).
+3. **Variables:** `ADMIN_TOKEN` = a long random secret. Optional: `PRESSURE_SCALE`, `LOG_PREDICTIONS`.
+4. **Settings → Networking → Generate Domain** (the app listens on Railway's `$PORT`).
+
+On first boot the service answers immediately and trains the starter model in the background
+(about 2 minutes). `/health` shows `"training": "bootstrap"` until it is ready.
+
+### Web app on Vercel
+1. Add New Project → import this repository (framework: Next.js, root directory: repo root).
+2. Environment variable `ML_API_URL` = the Railway domain, e.g. `https://xxxx.up.railway.app`.
+3. Deploy, then open `/admin` and unlock it with the Railway `ADMIN_TOKEN`.
+
+Training runs as a background job (the admin page polls `/admin/train/status`), so it is not
+limited by Vercel's request timeout.
+
+### Single server (Docker Compose)
 ```bash
-docker compose up --build    # ml on :8000, web on :3000
+cp ml/.env.example ml/.env   # set ADMIN_TOKEN
+docker compose up -d --build # ml on :8000, web on :3000
 ```
-On Vercel, deploy the Next.js app and set `ML_API_URL` to the ML service's public URL.
+Put a reverse proxy with HTTPS (e.g. Caddy) in front for public access.
 
 > SmartSole is a screening aid, not a diagnostic device. Predictions must be interpreted by a
 > qualified clinician alongside a physical foot examination.

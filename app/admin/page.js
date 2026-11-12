@@ -504,19 +504,42 @@ function Train({ api, schema, overview, onTrained }) {
   const [source, setSource] = useState("real");
   const [algos, setAlgos] = useState(Object.keys(schema.algorithms));
   const [activate, setActivate] = useState(true);
-  const [busy, setBusy] = useState(false);
+  // Training runs as a background job on the ML service; we start it, then poll its status.
+  const [busy, setBusy] = useState(() => overview?.training_job?.status === "running");
+  const [jobKind, setJobKind] = useState(() => overview?.training_job?.kind || "admin");
+  const [elapsed, setElapsed] = useState(0);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const ready = overview?.readiness;
 
+  useEffect(() => {
+    if (!busy) return undefined;
+    let stopped = false;
+    let timer;
+    const tick = async () => {
+      try {
+        const s = await api("train/status");
+        if (stopped) return;
+        if (s.started_at) setElapsed(Math.max(0, Math.round((Date.now() - Date.parse(s.started_at)) / 1000)));
+        if (s.status === "running") { timer = setTimeout(tick, 3000); return; }
+        if (s.status === "succeeded") { setReport(s.report); onTrained(); }
+        else if (s.status === "failed") setError(s.error || "Training failed.");
+        setBusy(false);
+      } catch (e) {
+        if (!stopped) { setError(e.message); setBusy(false); }
+      }
+    };
+    timer = setTimeout(tick, 1500);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [busy, api, onTrained]);
+
   const run = async () => {
-    setBusy(true); setError(""); setReport(null);
+    setError(""); setReport(null); setElapsed(0);
     try {
-      const rep = await api("train", { method: "POST", body: { source, algorithms: algos, activate } });
-      setReport(rep);
-      onTrained();
+      await api("train", { method: "POST", body: { source, algorithms: algos, activate } });
+      setJobKind("admin");
+      setBusy(true);
     } catch (e) { setError(e.message); }
-    setBusy(false);
   };
 
   const SOURCES = [
@@ -554,10 +577,18 @@ function Train({ api, schema, overview, onTrained }) {
               <Notice kind="warn">Dataset not ready yet: {ready.checks.filter((c) => !c.ok && !c.optional).map((c) => c.text).join(" ")}</Notice>
             )}
             <Button className="w-full py-3" disabled={busy || !algos.length || (source === "real" && !ready?.trainable)} onClick={run}>
-              {busy ? "Training & cross-validating…" : "Start training"}
+              {busy ? `Training & cross-validating… ${elapsed}s` : "Start training"}
             </Button>
           </div>
         </div>
+        {busy && (
+          <div className="mt-4">
+            <Notice kind="info">
+              {jobKind === "bootstrap" ? "The starter model is being trained after a fresh start." : "Training is running on the ML service."}{" "}
+              It usually takes 1–3 minutes. You can leave this tab — the result will be in the <b>Models</b> tab.
+            </Notice>
+          </div>
+        )}
         {error && <div className="mt-4"><Notice kind="error">{error}</Notice></div>}
       </Card>
       {report && (

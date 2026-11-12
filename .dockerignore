@@ -1,0 +1,6 @@
+# The only image built from this repo is the ML service (ml/Dockerfile, context = repo root).
+# Allow-list just what it needs so node_modules, data and secrets never enter the build.
+*
+!ml/requirements.txt
+!ml/app
+ml/app/**/__pycache__
