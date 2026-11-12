@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ml": "node scripts/ml.mjs dev",
+    "ml:setup": "node scripts/ml.mjs setup",
+    "ml:test": "node scripts/ml.mjs test",
+    "ml:start": "node scripts/ml.mjs start"
   },
   "dependencies": {
     "next": "16.0.8",

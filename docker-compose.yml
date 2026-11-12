@@ -1,0 +1,23 @@
+services:
+  ml:
+    build: ./ml
+    env_file: ./ml/.env
+    volumes:
+      - ml-data:/data
+    ports:
+      - "8000:8000"
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run build && npm start"
+    environment:
+      - ML_API_URL=http://ml:8000
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - ml
+volumes:
+  ml-data:

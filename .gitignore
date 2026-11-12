@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python ml service
+/ml/.venv/
+/ml/data/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local tool caches (kept on D:)
+/.cache/
+# keep the env templates (real .env files stay ignored)
+!.env.example
+# machine-specific local config
+/.npmrc
+/.claude/
